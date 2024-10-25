@@ -58,6 +58,8 @@ func main() {
 		authorized.POST("/upload", handlers.UploadImage)
 		authorized.GET("/download/:id", handlers.DownloadFile)
 		authorized.DELETE("/files/:id", handlers.DeleteFile)
+		authorized.GET("/preview/:id", handlers.PreviewImage)
+		authorized.GET("/preview/:id/", handlers.PreviewImage)
 	}
 
 	// Start the server

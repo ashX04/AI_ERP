@@ -8,19 +8,22 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	sessions "github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 )
 
 type ExcelFile struct {
-	ID        string `json:"id"`
-	User      string `json:"user"`
-	ExcelPath string `json:"excel"`
-	ImagePath string `json:"source_image"` // Changed from SourceImage to ImagePath
-	Created   string `json:"created"`
-	Updated   string `json:"updated"`
-	FileName  string `json:"-"`
+	ID          string `json:"id"`
+	User        string `json:"user"`
+	ExcelPath   string `json:"excel"`
+	SourceImage string `json:"source_image"`
+	Created     string `json:"created"`
+	Updated     string `json:"updated"`
+	FileName    string `json:"-"`
+	ImagePath   string `json:"-"`
+	CreatedAt   string `json:"-"` // Add this field for parsed time
 }
 
 type PocketBaseResponse struct {
@@ -32,18 +35,14 @@ type PocketBaseResponse struct {
 
 func ShowDashboard(c *gin.Context) {
 	session := sessions.Default(c)
-
-	// Debug: Print session data
-	fmt.Printf("Dashboard session data: %+v\n", session.Get("authenticated"))
-
 	userID := session.Get("userID")
 	if userID == nil {
 		c.Redirect(http.StatusSeeOther, "/login")
 		return
 	}
 
-	// Add debug logging
-	log.Printf("User ID from session: %v", userID)
+	// Add debug logging for userID
+	log.Printf("Current userID: %v", userID)
 
 	// Fetch excel files from PocketBase
 	resp, err := http.Get("http://localhost:8090/api/collections/excel_files/records")
@@ -77,20 +76,17 @@ func ShowDashboard(c *gin.Context) {
 		return
 	}
 
-	// Filter files for the current user
+	// Filter files for current user
 	var userFiles []ExcelFile
 	for _, file := range pbResp.Items {
 		if file.User == userID.(string) {
-			// Format the file paths to be accessible
-			file.ExcelPath = "/uploads/" + file.ExcelPath
-			file.ImagePath = "/uploads/" + file.ImagePath // Updated from SourceImage to ImagePath
-			// Extract filename from the Excel path
-			file.FileName = file.ExcelPath[len("/uploads/"):]
 			userFiles = append(userFiles, file)
 		}
 	}
 
-	// Render the dashboard template with the files
+	// Log the number of user files
+	log.Printf("Number of files for user %v: %d", userID, len(userFiles))
+
 	c.HTML(http.StatusOK, "dashboard.html", gin.H{
 		"title":  "Dashboard",
 		"files":  userFiles,
@@ -182,4 +178,84 @@ func DownloadFile(c *gin.Context) {
 	}
 
 	log.Printf("File served successfully: %s", filePath)
+}
+
+func PreviewImage(c *gin.Context) {
+	fileID := c.Param("id")
+	log.Printf("Attempting to preview image for file with ID: %s", fileID)
+
+	// Fetch excel file details from PocketBase
+	excelResp, err := http.Get("http://localhost:8090/api/collections/excel_files/records/" + fileID)
+	if err != nil {
+		log.Printf("Error fetching excel file details: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch excel file details"})
+		return
+	}
+	defer excelResp.Body.Close()
+
+	var excelFile ExcelFile
+	if err := json.NewDecoder(excelResp.Body).Decode(&excelFile); err != nil {
+		log.Printf("Error parsing excel file details: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse excel file details"})
+		return
+	}
+
+	// Fetch image details from PocketBase
+	imageResp, err := http.Get("http://localhost:8090/api/collections/images/records/" + excelFile.SourceImage)
+	if err != nil {
+		log.Printf("Error fetching image details: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch image details"})
+		return
+	}
+	defer imageResp.Body.Close()
+
+	var imageFile struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(imageResp.Body).Decode(&imageFile); err != nil {
+		log.Printf("Error parsing image details: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse image details"})
+		return
+	}
+
+	// Construct the image file path
+	pbImageStoragePath := "D:\\codes\\golang\\basedatabase\\pb_data\\storage\\ja5zwzf3eiqb4tc"
+	imagePath := filepath.Join(pbImageStoragePath, imageFile.ID, imageFile.Name)
+	log.Printf("Constructed image path: %s", imagePath)
+
+	// Check if image exists
+	if _, err := os.Stat(imagePath); os.IsNotExist(err) {
+		log.Printf("Image not found: %s", imagePath)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Image not found"})
+		return
+	}
+
+	// Read the image file
+	imageData, err := os.ReadFile(imagePath)
+	if err != nil {
+		log.Printf("Error reading image file: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read image file"})
+		return
+	}
+
+	contentType := getContentType(imagePath)
+	c.Header("Content-Type", contentType)
+	c.Data(http.StatusOK, contentType, imageData)
+
+	log.Printf("Image path: %s, Content-Type: %s", imagePath, contentType)
+}
+
+func getContentType(filePath string) string {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	switch ext {
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".gif":
+		return "image/gif"
+	default:
+		return "application/octet-stream"
+	}
 }
