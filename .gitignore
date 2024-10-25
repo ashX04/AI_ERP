@@ -1,0 +1,35 @@
+# .gitignore
+
+# Binaries
+myapp
+
+# Go build cache
+*.o
+*.a
+*.out
+
+# .env file
+*.env
+
+# Vendor directory
+/vendor/
+
+# IDE files
+.idea/
+*.iml
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+
+uploads/*
+
+*.xlsx
+*.xls

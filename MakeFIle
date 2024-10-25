@@ -1,0 +1,16 @@
+# Makefile
+
+.PHONY: run build clean
+
+# Define the binary name
+BINARY=myapp
+
+run:
+	go run cmd/main.go
+
+build:
+	go build -o $(BINARY) cmd/main.go
+
+clean:
+	go clean
+	rm -f $(BINARY)
