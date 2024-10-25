@@ -1,9 +1,14 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"mime/multipart"
+	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -12,7 +17,7 @@ import (
 )
 
 // ProcessImage handles sending the image to Azure Vision API and processing the response with OpenAI
-func ProcessImage(filePath string) (string, error) {
+func ProcessImage(filePath string, userID string) (string, error) {
 	// Send the image to the Azure Vision API
 	resp, err := utils.SendImageToAPI(filePath)
 	if err != nil {
@@ -82,6 +87,8 @@ func ProcessImage(filePath string) (string, error) {
 	} else {
 		log.Printf("Warning: <*> tags not found in csvData")
 	}
+	// Remove all <*> from csvData
+	csvData = strings.ReplaceAll(csvData, "<*>", "")
 	// Create a new Excel file
 	f := excelize.NewFile()
 	defer func() {
@@ -120,6 +127,58 @@ func ProcessImage(filePath string) (string, error) {
 	if err := f.SaveAs(fileName); err != nil {
 		log.Printf("Error saving Excel file: %v", err)
 		return "", fmt.Errorf("failed to save Excel file: %w", err)
+	}
+	// Prepare file data for PocketBase
+	fileData := &bytes.Buffer{}
+	writer := multipart.NewWriter(fileData)
+
+	// Add user ID field
+	if err := writer.WriteField("user", userID); err != nil {
+		log.Printf("Error writing user field: %v", err)
+		return "", fmt.Errorf("failed to write user field: %w", err)
+	}
+
+	// Add Excel file
+	file, err := os.Open(fileName)
+	if err != nil {
+		log.Printf("Error opening Excel file: %v", err)
+		return "", fmt.Errorf("failed to open Excel file: %w", err)
+	}
+	defer file.Close()
+
+	part, err := writer.CreateFormFile("excel", fileName)
+	if err != nil {
+		log.Printf("Error creating form file: %v", err)
+		return "", fmt.Errorf("failed to create form file: %w", err)
+	}
+
+	if _, err := io.Copy(part, file); err != nil {
+		log.Printf("Error copying file contents: %v", err)
+		return "", fmt.Errorf("failed to copy file contents: %w", err)
+	}
+
+	writer.Close()
+
+	// Send request to PocketBase
+	req, err := http.NewRequest("POST", "http://localhost:8090/api/collections/excel_files/records", fileData)
+	if err != nil {
+		log.Printf("Error creating request: %v", err)
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	client := &http.Client{}
+	pbResp, err := client.Do(req) // Changed variable name to pbResp
+	if err != nil {
+		log.Printf("Error uploading to PocketBase: %v", err)
+		return "", fmt.Errorf("failed to upload to PocketBase: %w", err)
+	}
+	defer pbResp.Body.Close()
+
+	if pbResp.StatusCode != http.StatusOK {
+		log.Printf("PocketBase upload failed with status: %d", pbResp.StatusCode)
+		return "", fmt.Errorf("PocketBase upload failed with status: %d", pbResp.StatusCode)
 	}
 
 	log.Printf("Excel file saved as: %s", fileName)

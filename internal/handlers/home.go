@@ -17,19 +17,6 @@ func ShowHome(c *gin.Context) {
 	})
 }
 
-// Middleware to require authentication
-func RequireAuth() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		session, _ := store.Get(c.Request, "session-name")
-		if session.Values["userID"] == nil {
-			c.Redirect(http.StatusSeeOther, "/login")
-			c.Abort()
-			return
-		}
-		c.Next()
-	}
-}
-
 // Logout handler
 func Logout(c *gin.Context) {
 	session, _ := store.Get(c.Request, "session-name")

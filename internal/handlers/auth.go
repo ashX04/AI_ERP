@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"github.com/gorilla/sessions"
 )
 
@@ -90,19 +91,30 @@ func LoginProcess(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusOK {
-		var authResponse AuthResponse
-		if err := json.NewDecoder(resp.Body).Decode(&authResponse); err != nil {
+		var result struct {
+			Token  string `json:"token"`
+			Record struct {
+				ID    string `json:"id"`
+				Email string `json:"email"`
+			} `json:"record"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			http.Error(w, "Failed to parse response", http.StatusInternalServerError)
 			return
 		}
 
-		// Store the user ID in the session
+		// Store both user ID and token in session
 		session, _ := store.Get(r, "session-name")
-		session.Values["userID"] = authResponse.Record.Id
-		session.Save(r, w)
+		session.Values["userID"] = result.Record.ID
+		session.Values["token"] = result.Token
+		if err := session.Save(r, w); err != nil {
+			http.Error(w, "Failed to save session", http.StatusInternalServerError)
+			return
+		}
 
-		fmt.Println("User logged in successfully.")
-		http.Redirect(w, r, "/?message=Login successful!", http.StatusSeeOther)
+		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+		return
 	} else {
 		body, _ := ioutil.ReadAll(resp.Body)
 		http.Error(w, fmt.Sprintf("Error logging in: %s", string(body)), http.StatusInternalServerError)
@@ -114,4 +126,27 @@ type AuthResponse struct {
 	Record struct {
 		Id string `json:"id"`
 	} `json:"record"`
+}
+
+// RequireAuth middleware for authentication
+func RequireAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		session, err := store.Get(c.Request, "session-name")
+		if err != nil {
+			c.Redirect(http.StatusSeeOther, "/login")
+			c.Abort()
+			return
+		}
+
+		userID, ok := session.Values["userID"].(string)
+		if !ok || userID == "" {
+			c.Redirect(http.StatusSeeOther, "/login")
+			c.Abort()
+			return
+		}
+
+		// Add user ID to the context for use in handlers
+		c.Set("userID", userID)
+		c.Next()
+	}
 }
