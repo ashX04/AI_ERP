@@ -4,14 +4,33 @@ import (
 	"net/http"
 
 	"github.com/ashX04/new_website/internal/handlers"
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
 	r := gin.Default()
 
+	// Create a secure random key
+	key := []byte("your-secure-secret-key-min-32-bytes-long")
+
+	// Initialize the cookie store with additional options
+	store := cookie.NewStore(key)
+	store.Options(sessions.Options{
+		Path:     "/",       // Path for the cookie
+		MaxAge:   3600 * 24, // 24 hours
+		Secure:   false,     // Set to true in production with HTTPS
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	// Use sessions middleware
+	r.Use(sessions.Sessions("session-name", store))
+
 	// Serve static files
 	r.Static("/static", "./static")
+	r.Static("/uploads", "./uploads")
 
 	// Load HTML templates
 	r.LoadHTMLGlob("internal/templates/*")
@@ -25,7 +44,7 @@ func main() {
 		c.HTML(http.StatusOK, "register.html", nil)
 	})
 	r.POST("/register", gin.WrapF(handlers.RegisterProcess))
-	r.POST("/login", gin.WrapF(handlers.LoginProcess))
+	r.POST("/login", handlers.LoginProcess)
 	r.GET("/logout", handlers.Logout)
 
 	// Protected routes (require authentication)
@@ -37,7 +56,8 @@ func main() {
 			c.HTML(http.StatusOK, "upload.html", nil)
 		})
 		authorized.POST("/upload", handlers.UploadImage)
-		authorized.GET("/download/:fileID", handlers.DownloadFile)
+		authorized.GET("/download/:id", handlers.DownloadFile)
+		authorized.DELETE("/files/:id", handlers.DeleteFile)
 	}
 
 	// Start the server

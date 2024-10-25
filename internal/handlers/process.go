@@ -17,7 +17,7 @@ import (
 )
 
 // ProcessImage handles sending the image to Azure Vision API and processing the response with OpenAI
-func ProcessImage(filePath string, userID string) (string, error) {
+func ProcessImage(filePath string, userID string, imageID string) (string, error) {
 	// Send the image to the Azure Vision API
 	resp, err := utils.SendImageToAPI(filePath)
 	if err != nil {
@@ -123,7 +123,12 @@ func ProcessImage(filePath string, userID string) (string, error) {
 	}
 
 	// Save the Excel file
-	fileName := fmt.Sprintf("output_%d.xlsx", time.Now().Unix())
+	fileName := fmt.Sprintf("uploads/output_%d.xlsx", time.Now().Unix())
+	// Create uploads directory if it doesn't exist
+	if err := os.MkdirAll("uploads", 0755); err != nil {
+		log.Printf("Error creating uploads directory: %v", err)
+		return "", fmt.Errorf("failed to create uploads directory: %w", err)
+	}
 	if err := f.SaveAs(fileName); err != nil {
 		log.Printf("Error saving Excel file: %v", err)
 		return "", fmt.Errorf("failed to save Excel file: %w", err)
@@ -136,6 +141,11 @@ func ProcessImage(filePath string, userID string) (string, error) {
 	if err := writer.WriteField("user", userID); err != nil {
 		log.Printf("Error writing user field: %v", err)
 		return "", fmt.Errorf("failed to write user field: %w", err)
+	}
+
+	// Add image ID field to establish relationship
+	if err := writer.WriteField("source_image", imageID); err != nil {
+		return "", fmt.Errorf("failed to write source_image field: %w", err)
 	}
 
 	// Add Excel file
@@ -166,18 +176,28 @@ func ProcessImage(filePath string, userID string) (string, error) {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
+	// Add required headers
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// If you have an admin API key or authentication token, add it here
+	// req.Header.Set("Authorization", "YOUR_AUTH_TOKEN")
+
+	// Log the request body for debugging
+	log.Printf("Request Content-Type: %s", writer.FormDataContentType())
 
 	client := &http.Client{}
-	pbResp, err := client.Do(req) // Changed variable name to pbResp
+	pbResp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Error uploading to PocketBase: %v", err)
 		return "", fmt.Errorf("failed to upload to PocketBase: %w", err)
 	}
 	defer pbResp.Body.Close()
 
+	// Read and log the error response for debugging
+	respBody, _ := io.ReadAll(pbResp.Body)
+	log.Printf("PocketBase response: %s", string(respBody))
+
 	if pbResp.StatusCode != http.StatusOK {
-		log.Printf("PocketBase upload failed with status: %d", pbResp.StatusCode)
+		log.Printf("PocketBase upload failed with status: %d, Response: %s", pbResp.StatusCode, string(respBody))
 		return "", fmt.Errorf("PocketBase upload failed with status: %d", pbResp.StatusCode)
 	}
 

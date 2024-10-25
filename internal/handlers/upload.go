@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -113,13 +114,17 @@ func UploadImage(c *gin.Context) {
 			}
 			defer resp.Body.Close()
 
-			if resp.StatusCode != http.StatusOK {
-				errorChan <- fmt.Errorf("PocketBase upload failed for %s with status: %d", filename, resp.StatusCode)
+			// Read and parse the response to get imageID
+			var pbResponse struct {
+				Id string `json:"id"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&pbResponse); err != nil {
+				errorChan <- fmt.Errorf("failed to decode PocketBase response for %s: %v", filename, err)
 				return
 			}
 
-			// Process the image
-			csvData, err := ProcessImage(filePath, userID)
+			// Process the image with the obtained imageID
+			csvData, err := ProcessImage(filePath, userID, pbResponse.Id)
 			if err != nil {
 				errorChan <- fmt.Errorf("failed to process image %s: %v", filename, err)
 				return

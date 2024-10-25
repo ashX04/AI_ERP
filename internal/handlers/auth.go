@@ -7,15 +7,16 @@ import (
 	"io/ioutil"
 	"net/http"
 
+	sessions "github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/sessions"
 )
 
 // PocketBase API URL
 const baseURL = "http://localhost:8090/api/collections/users/records"
 
 // Session store
-var store = sessions.NewCookieStore([]byte("your-secret-key"))
+var store = cookie.NewStore([]byte("your-secret-key"))
 
 // Register Process
 func RegisterProcess(w http.ResponseWriter, r *http.Request) {
@@ -61,14 +62,15 @@ func RegisterProcess(w http.ResponseWriter, r *http.Request) {
 }
 
 // Login Process
-func LoginProcess(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+func LoginProcess(c *gin.Context) {
+	if c.Request.Method != http.MethodPost {
+		c.Redirect(http.StatusSeeOther, "/login")
+		c.Abort()
 		return
 	}
 
-	email := r.FormValue("email")
-	password := r.FormValue("password")
+	email := c.PostForm("email")
+	password := c.PostForm("password")
 
 	// Prepare login request data
 	loginData := map[string]interface{}{
@@ -78,14 +80,14 @@ func LoginProcess(w http.ResponseWriter, r *http.Request) {
 
 	jsonData, err := json.Marshal(loginData)
 	if err != nil {
-		http.Error(w, "Failed to marshal request", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal request"})
 		return
 	}
 
 	// Send POST request to PocketBase API for authentication
 	resp, err := http.Post("http://localhost:8090/api/collections/users/auth-with-password", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
-		http.Error(w, "Failed to log in", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to log in"})
 		return
 	}
 	defer resp.Body.Close()
@@ -100,24 +102,27 @@ func LoginProcess(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			http.Error(w, "Failed to parse response", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse response"})
 			return
 		}
 
 		// Store both user ID and token in session
-		session, _ := store.Get(r, "session-name")
-		session.Values["userID"] = result.Record.ID
-		session.Values["token"] = result.Token
-		if err := session.Save(r, w); err != nil {
-			http.Error(w, "Failed to save session", http.StatusInternalServerError)
+		session := sessions.Default(c)
+		session.Set("userID", result.Record.ID)
+		session.Set("token", result.Token)
+		session.Set("authenticated", true) // Add this explicit authentication flag
+		err := session.Save()              // Make sure to check the error
+		if err != nil {
+			// Handle error
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save session"})
 			return
 		}
 
-		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+		c.Redirect(http.StatusSeeOther, "/dashboard")
 		return
 	} else {
 		body, _ := ioutil.ReadAll(resp.Body)
-		http.Error(w, fmt.Sprintf("Error logging in: %s", string(body)), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error logging in: %s", string(body))})
 	}
 }
 
@@ -131,22 +136,20 @@ type AuthResponse struct {
 // RequireAuth middleware for authentication
 func RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		session, err := store.Get(c.Request, "session-name")
-		if err != nil {
+		session := sessions.Default(c)
+
+		// Debug: Print session data
+		fmt.Printf("Session data: %+v\n", session.Get("authenticated"))
+
+		// Check if user is authenticated
+		auth := session.Get("authenticated")
+		if auth == nil || auth != true {
 			c.Redirect(http.StatusSeeOther, "/login")
 			c.Abort()
 			return
 		}
 
-		userID, ok := session.Values["userID"].(string)
-		if !ok || userID == "" {
-			c.Redirect(http.StatusSeeOther, "/login")
-			c.Abort()
-			return
-		}
-
-		// Add user ID to the context for use in handlers
-		c.Set("userID", userID)
+		// User is authenticated, continue
 		c.Next()
 	}
 }
