@@ -6,6 +6,7 @@ import (
 	"html"
 	"net/http"
 	"net/url"
+	"sort"
 	"time"
 
 	"github.com/ashX04/new_website/internal/utils"
@@ -14,14 +15,20 @@ import (
 )
 
 type DashboardData struct {
-	Title string
+	Title      string
+	FileGroups []FileGroup
+	Error      string
+}
+
+type FileGroup struct {
+	Date  string
 	Files []FileData
-	Error string
 }
 
 type FileData struct {
 	ID        string
 	Created   string
+	CreatedAt time.Time
 	Image     string
 	ExcelFile string
 }
@@ -62,9 +69,9 @@ func ShowDashboard(c *gin.Context) {
 	resp, err := utils.SecureClient.Get(baseURL + "?" + params.Encode())
 	if err != nil {
 		c.HTML(http.StatusOK, "dashboard.html", DashboardData{
-			Title: "Dashboard",
-			Error: "Failed to fetch files",
-			Files: []FileData{},
+			Title:      "Dashboard",
+			Error:      "Failed to fetch files",
+			FileGroups: []FileGroup{},
 		})
 		return
 	}
@@ -74,13 +81,14 @@ func ShowDashboard(c *gin.Context) {
 	var pbResp PocketBaseResponse
 	if err := json.NewDecoder(resp.Body).Decode(&pbResp); err != nil {
 		c.HTML(http.StatusOK, "dashboard.html", DashboardData{
-			Title: "Dashboard",
-			Error: "Failed to parse response: " + err.Error(),
-			Files: []FileData{},
+			Title:      "Dashboard",
+			Error:      "Failed to parse response: " + err.Error(),
+			FileGroups: []FileGroup{},
 		})
 		return
 	}
 
+	// Create files slice
 	var files []FileData
 	for _, item := range pbResp.Items {
 		// Double check that the file belongs to the user
@@ -90,12 +98,13 @@ func ShowDashboard(c *gin.Context) {
 
 		createdTime, err := time.Parse("2006-01-02 15:04:05.999Z", item.Created)
 		if err != nil {
-			continue // Skip this item if time parsing fails
+			continue
 		}
 
 		fileData := FileData{
-			ID:      item.ID,
-			Created: createdTime.Format("2006-01-02 15:04:05.000"),
+			ID:        item.ID,
+			Created:   createdTime.Format("2006-01-02 15:04:05"),
+			CreatedAt: createdTime, // Store the time.Time for sorting
 		}
 
 		// Set Excel file URL
@@ -115,16 +124,71 @@ func ShowDashboard(c *gin.Context) {
 		files = append(files, fileData)
 	}
 
-	c.HTML(http.StatusOK, "dashboard.html", DashboardData{
-		Title: "Dashboard",
-		Files: files,
+	// Sort files by date (newest first)
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].CreatedAt.After(files[j].CreatedAt)
 	})
+
+	// Group files by date
+	fileGroups := groupFilesByDate(files)
+
+	c.HTML(http.StatusOK, "dashboard.html", DashboardData{
+		Title:      "Dashboard",
+		FileGroups: fileGroups,
+	})
+}
+
+// Helper function to group files by date
+func groupFilesByDate(files []FileData) []FileGroup {
+	groups := make(map[string][]FileData)
+
+	for _, file := range files {
+		date := file.CreatedAt.Format("January 2, 2006") // Format date as "Month Day, Year"
+		groups[date] = append(groups[date], file)
+	}
+
+	// Convert map to sorted slice
+	var fileGroups []FileGroup
+	for date, files := range groups {
+		fileGroups = append(fileGroups, FileGroup{
+			Date:  date,
+			Files: files,
+		})
+	}
+
+	// Sort groups by date (newest first)
+	sort.Slice(fileGroups, func(i, j int) bool {
+		dateI, _ := time.Parse("January 2, 2006", fileGroups[i].Date)
+		dateJ, _ := time.Parse("January 2, 2006", fileGroups[j].Date)
+		return dateI.After(dateJ)
+	})
+
+	return fileGroups
 }
 
 // DownloadFile handles file downloads
 func DownloadFile(c *gin.Context) {
 	id := c.Param("id")
-	fileURL := fmt.Sprintf("http://127.0.0.1:8090/api/files/excel_files/%s", id)
+
+	// Get the file info first
+	infoURL := fmt.Sprintf("http://127.0.0.1:8090/api/collections/excel_files/records/%s", id)
+	resp, err := utils.SecureClient.Get(infoURL)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get file info"})
+		return
+	}
+	defer resp.Body.Close()
+
+	var fileInfo struct {
+		Excel string `json:"excel"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&fileInfo); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse file info"})
+		return
+	}
+
+	// Construct the correct download URL with the filename
+	fileURL := fmt.Sprintf("http://127.0.0.1:8090/api/files/excel_files/%s/%s", id, fileInfo.Excel)
 	c.Redirect(http.StatusFound, fileURL)
 }
 
@@ -210,35 +274,31 @@ func PreviewImage(c *gin.Context) {
 		return
 	}
 
-	// Create safe URL
-	url, err := utils.SanitizeURL(fmt.Sprintf("http://127.0.0.1:8090/api/collections/excel_files/records/%s", url.QueryEscape(id)))
+	// Get the file info first
+	infoURL := fmt.Sprintf("http://127.0.0.1:8090/api/collections/excel_files/records/%s", id)
+	resp, err := utils.SecureClient.Get(infoURL)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid URL"})
-		return
-	}
-
-	// Use secure client
-	resp, err := utils.SecureClient.Get(url)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify file ownership"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get file info"})
 		return
 	}
 	defer resp.Body.Close()
 
-	var fileRecord struct {
-		User string `json:"user"`
+	var fileInfo struct {
+		User  string `json:"user"`
+		Image string `json:"image"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&fileRecord); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify file ownership"})
+	if err := json.NewDecoder(resp.Body).Decode(&fileInfo); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse file info"})
 		return
 	}
 
 	// Check if the file belongs to the user
-	if fileRecord.User != userID.(string) {
+	if fileInfo.User != userID.(string) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Unauthorized to view this file"})
 		return
 	}
 
-	imageURL := fmt.Sprintf("http://127.0.0.1:8090/api/files/excel_files/%s", id)
+	// Construct the correct image URL with the filename
+	imageURL := fmt.Sprintf("http://127.0.0.1:8090/api/files/excel_files/%s/%s", id, fileInfo.Image)
 	c.Redirect(http.StatusFound, imageURL)
 }

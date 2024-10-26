@@ -7,6 +7,46 @@
     <title>{{ .Title }}</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .date-group {
+            margin: 2rem 0;
+            border-radius: 8px;
+            background: #f8f9fa;
+            padding: 1rem;
+        }
+        
+        .date-header {
+            font-size: 1.25rem;
+            color: #343a40;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #dee2e6;
+        }
+        
+        .files-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 1rem;
+        }
+        
+        .file-card {
+            background: white;
+            border-radius: 6px;
+            padding: 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .file-time {
+            font-size: 0.875rem;
+            color: #6c757d;
+        }
+
+        .file-actions {
+            margin-top: 1rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+    </style>
 </head>
 <body class="bg-gray-100">
     <div class="container mx-auto px-4 py-8">
@@ -24,70 +64,35 @@
         {{ end }}
 
         <div class="bg-white shadow-md rounded-lg overflow-hidden">
-            {{ if .Files }}
+            {{ if .FileGroups }}
             <div class="divide-y divide-gray-200">
-                {{ range .Files }}
-                <div class="p-6 hover:bg-gray-50 flex items-center justify-between">
-                    <div class="flex items-center space-x-4">
-                        <!-- Image Preview -->
-                        <div class="w-24 h-24 flex-shrink-0">
+                {{ range .FileGroups }}
+                <div class="date-group">
+                    <h2 class="date-header">{{ .Date }}</h2>
+                    <div class="files-grid">
+                        {{ range .Files }}
+                        <div class="file-card">
                             {{ if .Image }}
-                            <img src="{{ .Image }}" 
-                                 alt="Preview" 
-                                 class="w-24 h-24 object-cover rounded shadow">
-                            {{ else }}
-                            <div class="w-24 h-24 bg-gray-200 rounded flex items-center justify-center">
-                                <span class="text-gray-500 text-sm">No image</span>
-                            </div>
+                            <img src="{{ .Image }}" alt="Preview" style="max-width: 100%; height: auto;">
                             {{ end }}
+                            
+                            <div class="file-time">
+                                {{ .Created }}
+                            </div>
+                            
+                            <div class="file-actions">
+                                {{ if .ExcelFile }}
+                                <a href="/download/{{ .ID }}" class="button">Download Excel</a>
+                                {{ end }}
+                                
+                                {{ if .Image }}
+                                <a href="/preview/{{ .ID }}" class="button">View Image</a>
+                                {{ end }}
+                                
+                                <button onclick="deleteFile('{{ .ID }}')" class="button delete">Delete</button>
+                            </div>
                         </div>
-                        
-                        <!-- File Info -->
-                        <div>
-                            <h3 class="text-lg font-medium text-gray-900">File #{{ .ID }}</h3>
-                            <p class="text-sm text-gray-500">
-                                Created: {{ .Created }}
-                            </p>
-                        </div>
-                    </div>
-
-                    <!-- Actions -->
-                    <div class="flex space-x-3">
-                        {{ if .Image }}
-                        <a href="{{ .Image }}" 
-                           class="text-indigo-600 hover:text-indigo-900 flex items-center"
-                           target="_blank">
-                            <svg class="h-5 w-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                      d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                            </svg>
-                            View Image
-                        </a>
                         {{ end }}
-                        
-                        <a href="{{ .ExcelFile }}" 
-                           class="text-green-600 hover:text-green-900 flex items-center"
-                           download>
-                            <svg class="h-5 w-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                            </svg>
-                            Download Excel
-                        </a>
-
-                        <button class="text-red-600 hover:text-red-900 flex items-center"
-                                hx-delete="/api/files/{{ .ID }}"
-                                hx-confirm="Are you sure you want to delete this file?"
-                                hx-target="closest div.p-6"
-                                hx-swap="outerHTML">
-                            <svg class="h-5 w-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                            </svg>
-                            Delete
-                        </button>
                     </div>
                 </div>
                 {{ end }}
