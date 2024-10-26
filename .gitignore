@@ -33,3 +33,7 @@ uploads/*
 
 *.xlsx
 *.xls
+
+*.log
+internal/logs/*
+
