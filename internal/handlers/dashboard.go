@@ -3,9 +3,12 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
+	"net/url"
 	"time"
 
+	"github.com/ashX04/new_website/internal/utils"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 )
@@ -37,7 +40,6 @@ type PocketBaseResponse struct {
 }
 
 func ShowDashboard(c *gin.Context) {
-	// Get user ID from session
 	session := sessions.Default(c)
 	userID := session.Get("userID")
 
@@ -48,13 +50,20 @@ func ShowDashboard(c *gin.Context) {
 		return
 	}
 
-	// Make HTTP request to PocketBase API with user filter
-	url := fmt.Sprintf("http://127.0.0.1:8090/api/collections/excel_files/records?filter=(user='%s')", userID)
-	resp, err := http.Get(url)
+	// Sanitize user ID
+	userIDStr := html.EscapeString(fmt.Sprintf("%v", userID))
+
+	// Create safe URL with proper escaping
+	baseURL := "http://127.0.0.1:8090/api/collections/excel_files/records"
+	params := url.Values{}
+	params.Add("filter", fmt.Sprintf("(user='%s')", url.QueryEscape(userIDStr)))
+
+	// Make HTTP request with secure client and timeout
+	resp, err := utils.SecureClient.Get(baseURL + "?" + params.Encode())
 	if err != nil {
 		c.HTML(http.StatusOK, "dashboard.html", DashboardData{
 			Title: "Dashboard",
-			Error: "Failed to fetch files: " + err.Error(),
+			Error: "Failed to fetch files",
 			Files: []FileData{},
 		})
 		return
@@ -122,6 +131,13 @@ func DownloadFile(c *gin.Context) {
 // DeleteFile handles file deletion
 func DeleteFile(c *gin.Context) {
 	id := c.Param("id")
+
+	// Validate file ID
+	if !utils.ValidateFileID(id) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file ID"})
+		return
+	}
+
 	session := sessions.Default(c)
 	userID := session.Get("userID")
 
@@ -130,9 +146,15 @@ func DeleteFile(c *gin.Context) {
 		return
 	}
 
-	// First verify the file belongs to the user
-	url := fmt.Sprintf("http://127.0.0.1:8090/api/collections/excel_files/records/%s", id)
-	resp, err := http.Get(url)
+	// Create safe URL using the sanitized ID directly
+	safeURL, err := utils.SanitizeURL(fmt.Sprintf("http://127.0.0.1:8090/api/collections/excel_files/records/%s", url.QueryEscape(id)))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid URL"})
+		return
+	}
+
+	// Use secure client for requests
+	resp, err := utils.SecureClient.Get(safeURL)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify file ownership"})
 		return
@@ -153,11 +175,15 @@ func DeleteFile(c *gin.Context) {
 		return
 	}
 
-	// Proceed with deletion
-	req, _ := http.NewRequest("DELETE", url, nil)
-	client := &http.Client{}
-	deleteResp, err := client.Do(req)
-	if err != nil || deleteResp.StatusCode != http.StatusOK {
+	// Use secure client for deletion
+	req, err := http.NewRequest("DELETE", safeURL, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create delete request"})
+		return
+	}
+
+	deleteResp, err := utils.SecureClient.Do(req)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete file"})
 		return
 	}
@@ -169,6 +195,13 @@ func DeleteFile(c *gin.Context) {
 // PreviewImage handles image preview
 func PreviewImage(c *gin.Context) {
 	id := c.Param("id")
+
+	// Validate file ID
+	if !utils.ValidateFileID(id) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file ID"})
+		return
+	}
+
 	session := sessions.Default(c)
 	userID := session.Get("userID")
 
@@ -177,9 +210,15 @@ func PreviewImage(c *gin.Context) {
 		return
 	}
 
-	// Verify file ownership
-	url := fmt.Sprintf("http://127.0.0.1:8090/api/collections/excel_files/records/%s", id)
-	resp, err := http.Get(url)
+	// Create safe URL
+	url, err := utils.SanitizeURL(fmt.Sprintf("http://127.0.0.1:8090/api/collections/excel_files/records/%s", url.QueryEscape(id)))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid URL"})
+		return
+	}
+
+	// Use secure client
+	resp, err := utils.SecureClient.Get(url)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify file ownership"})
 		return

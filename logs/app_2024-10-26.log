@@ -1,0 +1,10 @@
+2024/10/26 10:12:26 [user_ai95rj0zkse7edg] GET /login  | Status: 200 | Latency: 1.182ms | IP: 127.0.0.1
+2024/10/26 10:12:26 [user_ai95rj0zkse7edg] GET /favicon.ico  | Status: 404 | Latency: 0s | IP: 127.0.0.1
+2024/10/26 10:12:29 [user_ai95rj0zkse7edg] POST /login  | Status: 303 | Latency: 242.2098ms | IP: 127.0.0.1
+2024/10/26 10:12:29 [user_ai95rj0zkse7edg] GET /dashboard  | Status: 200 | Latency: 13.9763ms | IP: 127.0.0.1
+2024/10/26 10:12:36 [user_ai95rj0zkse7edg] POST /login  | Status: 303 | Latency: 236.5133ms | IP: 127.0.0.1
+2024/10/26 10:12:36 [user_wm8lv09g77yevs7] GET /dashboard  | Status: 200 | Latency: 2.8534ms | IP: 127.0.0.1
+2024/10/26 10:12:40 [user_wm8lv09g77yevs7] GET /upload  | Status: 200 | Latency: 507.7µs | IP: 127.0.0.1
+2024/10/26 10:12:44 [user_wm8lv09g77yevs7] GET /  | Status: 200 | Latency: 711.1µs | IP: 127.0.0.1
+2024/10/26 10:12:46 [user_wm8lv09g77yevs7] GET /logout  | Status: 303 | Latency: 0s | IP: 127.0.0.1
+2024/10/26 10:12:46 [anonymous] GET /  | Status: 200 | Latency: 509µs | IP: 127.0.0.1

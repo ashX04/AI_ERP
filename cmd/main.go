@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/ashX04/new_website/internal/handlers"
+	"github.com/ashX04/new_website/internal/middleware"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
@@ -27,6 +28,9 @@ func main() {
 
 	// Use sessions middleware
 	r.Use(sessions.Sessions("session-name", store))
+
+	// Add the request logger middleware
+	r.Use(middleware.RequestLogger())
 
 	// Serve static files
 	r.Static("/static", "./static")
