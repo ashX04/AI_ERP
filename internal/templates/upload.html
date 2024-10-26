@@ -7,13 +7,22 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <h1>Upload Files</h1>
-    <form action="/upload" method="post" enctype="multipart/form-data">
-        <label for="files">Choose up to 10 files to upload:</label>
-        <input type="file" id="files" name="files" multiple required>
-        <br>
-        <button type="submit">Upload</button>
-    </form>
-    <p><a href="/">Back to Dashboard</a></p>
+    <div class="container">
+        <div class="card">
+            <h1 class="text-2xl font-bold mb-6">Upload Files</h1>
+            
+            <form action="/upload" method="post" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label class="form-label" for="files">Choose up to 10 files to upload</label>
+                    <input type="file" id="files" name="files" multiple required class="form-input">
+                </div>
+                
+                <div class="flex gap-4">
+                    <button type="submit" class="button">Upload</button>
+                    <a href="/" class="button secondary">Back to Dashboard</a>
+                </div>
+            </form>
+        </div>
+    </div>
 </body>
 </html>

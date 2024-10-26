@@ -22,6 +22,8 @@ myapp
 .DS_Store
 Thumbs.db
 
+*.log
+
 *.png
 *.jpg
 *.jpeg
@@ -36,4 +38,6 @@ uploads/*
 
 *.log
 internal/logs/*
+logs/*
 
+tmp/*
