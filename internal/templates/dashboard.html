@@ -47,14 +47,38 @@
             gap: 0.5rem;
         }
     </style>
+    <script>
+        function toggleFileSelection(checkbox) {
+            const downloadBtn = document.getElementById('bulk-download');
+            const checkboxes = document.querySelectorAll('input[name="selected_files[]"]:checked');
+            downloadBtn.disabled = checkboxes.length === 0;
+        }
+
+        function downloadSelected() {
+            const checkboxes = document.querySelectorAll('input[name="selected_files[]"]:checked');
+            const fileIds = Array.from(checkboxes).map(cb => cb.value);
+            
+            if (fileIds.length > 0) {
+                window.location.href = `/download-multiple?files=${fileIds.join(',')}`;
+            }
+        }
+    </script>
 </head>
 <body class="bg-gray-100">
     <div class="container mx-auto px-4 py-8">
         <div class="flex justify-between items-center mb-8">
             <h1 class="text-3xl font-bold">{{ .Title }}</h1>
-            <a href="/upload" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">
-                Upload New File
-            </a>
+            <div class="flex gap-4">
+                <button id="bulk-download" 
+                        onclick="downloadSelected()" 
+                        class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700" 
+                        disabled>
+                    Download Selected
+                </button>
+                <a href="/upload" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">
+                    Upload New File
+                </a>
+            </div>
         </div>
 
         {{ if .Error }}
@@ -78,6 +102,15 @@
                             
                             <div class="file-time">
                                 {{ .Created }}
+                            </div>
+                            
+                            <div class="flex items-center mb-2">
+                                <input type="checkbox" 
+                                       name="selected_files[]" 
+                                       value="{{ .ID }}" 
+                                       onchange="toggleFileSelection(this)"
+                                       class="mr-2">
+                                <span>Select for download</span>
                             </div>
                             
                             <div class="file-actions">

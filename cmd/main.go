@@ -64,6 +64,7 @@ func main() {
 		authorized.DELETE("/files/:id", handlers.DeleteFile)
 		authorized.GET("/preview/:id", handlers.PreviewImage)
 		authorized.GET("/preview/:id/", handlers.PreviewImage)
+		authorized.GET("/download-multiple", handlers.DownloadMultipleFiles)
 	}
 
 	// Start the server

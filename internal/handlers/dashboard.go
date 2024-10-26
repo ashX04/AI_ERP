@@ -1,12 +1,16 @@
 package handlers
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"fmt"
 	"html"
+	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ashX04/new_website/internal/utils"
@@ -301,4 +305,97 @@ func PreviewImage(c *gin.Context) {
 	// Construct the correct image URL with the filename
 	imageURL := fmt.Sprintf("http://127.0.0.1:8090/api/files/excel_files/%s/%s", id, fileInfo.Image)
 	c.Redirect(http.StatusFound, imageURL)
+}
+
+// Add this new function to handle multiple downloads
+func DownloadMultipleFiles(c *gin.Context) {
+	// Get file IDs from query parameter
+	fileIDs := c.Query("files")
+	if fileIDs == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No files selected"})
+		return
+	}
+
+	// Get user session
+	session := sessions.Default(c)
+	userID := session.Get("userID")
+	if userID == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+		return
+	}
+
+	// Split file IDs
+	ids := strings.Split(fileIDs, ",")
+
+	// Create a zip file
+	tmpfile, err := os.CreateTemp("", "download-*.zip")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create temporary file"})
+		return
+	}
+	defer os.Remove(tmpfile.Name())
+
+	zipWriter := zip.NewWriter(tmpfile)
+	defer zipWriter.Close()
+
+	// Process each file
+	for _, id := range ids {
+		// Validate file ID
+		if !utils.ValidateFileID(id) {
+			continue
+		}
+
+		// Get file info
+		infoURL := fmt.Sprintf("http://127.0.0.1:8090/api/collections/excel_files/records/%s", id)
+		resp, err := utils.SecureClient.Get(infoURL)
+		if err != nil {
+			continue
+		}
+
+		var fileInfo struct {
+			User  string `json:"user"`
+			Excel string `json:"excel"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&fileInfo); err != nil {
+			resp.Body.Close()
+			continue
+		}
+		resp.Body.Close()
+
+		// Verify ownership
+		if fileInfo.User != userID.(string) {
+			continue
+		}
+
+		// Download the file
+		fileURL := fmt.Sprintf("http://127.0.0.1:8090/api/files/excel_files/%s/%s", id, fileInfo.Excel)
+		fileResp, err := utils.SecureClient.Get(fileURL)
+		if err != nil {
+			continue
+		}
+
+		// Create file in zip
+		f, err := zipWriter.Create(fileInfo.Excel)
+		if err != nil {
+			fileResp.Body.Close()
+			continue
+		}
+
+		// Copy file content to zip
+		_, err = io.Copy(f, fileResp.Body)
+		fileResp.Body.Close()
+		if err != nil {
+			continue
+		}
+	}
+
+	// Close the zip writer before reading
+	zipWriter.Close()
+
+	// Set headers for download
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Disposition", "attachment; filename=excel_files.zip")
+
+	// Send the file
+	c.File(tmpfile.Name())
 }
