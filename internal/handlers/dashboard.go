@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,7 +19,7 @@ type DashboardData struct {
 type FileData struct {
 	ID        string
 	Created   string
-	Image     string // Changed from SourceImage
+	Image     string
 	ExcelFile string
 }
 
@@ -29,15 +30,27 @@ type PocketBaseResponse struct {
 	Items      []struct {
 		ID      string `json:"id"`
 		Created string `json:"created"`
-		Excel   string `json:"excel"` // Updated field name
-		Image   string `json:"image"` // New field name
+		Excel   string `json:"excel"`
+		Image   string `json:"image"`
 		User    string `json:"user"`
 	} `json:"items"`
 }
 
 func ShowDashboard(c *gin.Context) {
-	// Make HTTP request to PocketBase API - removed expand parameter as it's no longer needed
-	resp, err := http.Get("http://127.0.0.1:8090/api/collections/excel_files/records")
+	// Get user ID from session
+	session := sessions.Default(c)
+	userID := session.Get("userID")
+
+	if userID == nil {
+		c.HTML(http.StatusUnauthorized, "login.html", gin.H{
+			"error": "Please login first",
+		})
+		return
+	}
+
+	// Make HTTP request to PocketBase API with user filter
+	url := fmt.Sprintf("http://127.0.0.1:8090/api/collections/excel_files/records?filter=(user='%s')", userID)
+	resp, err := http.Get(url)
 	if err != nil {
 		c.HTML(http.StatusOK, "dashboard.html", DashboardData{
 			Title: "Dashboard",
@@ -61,14 +74,14 @@ func ShowDashboard(c *gin.Context) {
 
 	var files []FileData
 	for _, item := range pbResp.Items {
+		// Double check that the file belongs to the user
+		if item.User != userID.(string) {
+			continue
+		}
+
 		createdTime, err := time.Parse("2006-01-02 15:04:05.999Z", item.Created)
 		if err != nil {
-			c.HTML(http.StatusOK, "dashboard.html", DashboardData{
-				Title: "Dashboard",
-				Error: "Failed to parse time: " + err.Error(),
-				Files: []FileData{},
-			})
-			return
+			continue // Skip this item if time parsing fails
 		}
 
 		fileData := FileData{
@@ -109,16 +122,46 @@ func DownloadFile(c *gin.Context) {
 // DeleteFile handles file deletion
 func DeleteFile(c *gin.Context) {
 	id := c.Param("id")
+	session := sessions.Default(c)
+	userID := session.Get("userID")
 
-	// Make DELETE request to PocketBase
-	req, _ := http.NewRequest("DELETE", fmt.Sprintf("http://127.0.0.1:8090/api/collections/excel_files/records/%s", id), nil)
+	if userID == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+		return
+	}
+
+	// First verify the file belongs to the user
+	url := fmt.Sprintf("http://127.0.0.1:8090/api/collections/excel_files/records/%s", id)
+	resp, err := http.Get(url)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify file ownership"})
+		return
+	}
+	defer resp.Body.Close()
+
+	var fileRecord struct {
+		User string `json:"user"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&fileRecord); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify file ownership"})
+		return
+	}
+
+	// Check if the file belongs to the user
+	if fileRecord.User != userID.(string) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Unauthorized to delete this file"})
+		return
+	}
+
+	// Proceed with deletion
+	req, _ := http.NewRequest("DELETE", url, nil)
 	client := &http.Client{}
-	resp, err := client.Do(req)
-
-	if err != nil || resp.StatusCode != http.StatusOK {
+	deleteResp, err := client.Do(req)
+	if err != nil || deleteResp.StatusCode != http.StatusOK {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete file"})
 		return
 	}
+	defer deleteResp.Body.Close()
 
 	c.Status(http.StatusOK)
 }
@@ -126,7 +169,37 @@ func DeleteFile(c *gin.Context) {
 // PreviewImage handles image preview
 func PreviewImage(c *gin.Context) {
 	id := c.Param("id")
-	// Updated to use excel_files collection instead of images
+	session := sessions.Default(c)
+	userID := session.Get("userID")
+
+	if userID == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+		return
+	}
+
+	// Verify file ownership
+	url := fmt.Sprintf("http://127.0.0.1:8090/api/collections/excel_files/records/%s", id)
+	resp, err := http.Get(url)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify file ownership"})
+		return
+	}
+	defer resp.Body.Close()
+
+	var fileRecord struct {
+		User string `json:"user"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&fileRecord); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify file ownership"})
+		return
+	}
+
+	// Check if the file belongs to the user
+	if fileRecord.User != userID.(string) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Unauthorized to view this file"})
+		return
+	}
+
 	imageURL := fmt.Sprintf("http://127.0.0.1:8090/api/files/excel_files/%s", id)
 	c.Redirect(http.StatusFound, imageURL)
 }
