@@ -133,7 +133,8 @@ func ProcessImage(filePath string, userID string, imageID string) (string, error
 		log.Printf("Error saving Excel file: %v", err)
 		return "", fmt.Errorf("failed to save Excel file: %w", err)
 	}
-	// Prepare file data for PocketBase
+
+	// After Excel file is created, prepare multipart form data
 	fileData := &bytes.Buffer{}
 	writer := multipart.NewWriter(fileData)
 
@@ -143,28 +144,42 @@ func ProcessImage(filePath string, userID string, imageID string) (string, error
 		return "", fmt.Errorf("failed to write user field: %w", err)
 	}
 
-	// Add image ID field to establish relationship
-	if err := writer.WriteField("source_image", imageID); err != nil {
-		return "", fmt.Errorf("failed to write source_image field: %w", err)
-	}
-
 	// Add Excel file
-	file, err := os.Open(fileName)
+	excelFile, err := os.Open(fileName)
 	if err != nil {
 		log.Printf("Error opening Excel file: %v", err)
 		return "", fmt.Errorf("failed to open Excel file: %w", err)
 	}
-	defer file.Close()
+	defer excelFile.Close()
 
-	part, err := writer.CreateFormFile("excel", fileName)
+	excelPart, err := writer.CreateFormFile("excel", fileName)
 	if err != nil {
-		log.Printf("Error creating form file: %v", err)
-		return "", fmt.Errorf("failed to create form file: %w", err)
+		log.Printf("Error creating excel form file: %v", err)
+		return "", fmt.Errorf("failed to create excel form file: %w", err)
 	}
 
-	if _, err := io.Copy(part, file); err != nil {
-		log.Printf("Error copying file contents: %v", err)
-		return "", fmt.Errorf("failed to copy file contents: %w", err)
+	if _, err := io.Copy(excelPart, excelFile); err != nil {
+		log.Printf("Error copying excel file contents: %v", err)
+		return "", fmt.Errorf("failed to copy excel file contents: %w", err)
+	}
+
+	// Add the source image file
+	sourceImage, err := os.Open(filePath)
+	if err != nil {
+		log.Printf("Error opening source image: %v", err)
+		return "", fmt.Errorf("failed to open source image: %w", err)
+	}
+	defer sourceImage.Close()
+
+	imagePart, err := writer.CreateFormFile("image", filePath)
+	if err != nil {
+		log.Printf("Error creating image form file: %v", err)
+		return "", fmt.Errorf("failed to create image form file: %w", err)
+	}
+
+	if _, err := io.Copy(imagePart, sourceImage); err != nil {
+		log.Printf("Error copying image file contents: %v", err)
+		return "", fmt.Errorf("failed to copy image file contents: %w", err)
 	}
 
 	writer.Close()
@@ -178,8 +193,6 @@ func ProcessImage(filePath string, userID string, imageID string) (string, error
 
 	// Add required headers
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	// If you have an admin API key or authentication token, add it here
-	// req.Header.Set("Authorization", "YOUR_AUTH_TOKEN")
 
 	// Log the request body for debugging
 	log.Printf("Request Content-Type: %s", writer.FormDataContentType())
@@ -192,17 +205,15 @@ func ProcessImage(filePath string, userID string, imageID string) (string, error
 	}
 	defer pbResp.Body.Close()
 
-	// Read and log the error response for debugging
+	// Read and log the response for debugging
 	respBody, _ := io.ReadAll(pbResp.Body)
 	log.Printf("PocketBase response: %s", string(respBody))
 
-	if pbResp.StatusCode != http.StatusOK {
+	if pbResp.StatusCode != http.StatusOK && pbResp.StatusCode != http.StatusCreated {
 		log.Printf("PocketBase upload failed with status: %d, Response: %s", pbResp.StatusCode, string(respBody))
 		return "", fmt.Errorf("PocketBase upload failed with status: %d", pbResp.StatusCode)
 	}
 
-	log.Printf("Excel file saved as: %s", fileName)
-	csvData = fileName // Update csvData to return the file name
-
-	return csvData, nil
+	log.Printf("Excel file and image saved successfully")
+	return fileName, nil
 }
